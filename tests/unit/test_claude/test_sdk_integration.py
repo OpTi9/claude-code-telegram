@@ -8,6 +8,7 @@ import pytest
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
+    ClaudeSDKError,
     ResultMessage,
     TextBlock,
 )
@@ -171,6 +172,23 @@ class TestClaudeSDKManager:
                     prompt="Test prompt",
                     working_directory=Path("/test"),
                 )
+
+    async def test_unknown_message_type_raises_parsing_error(self, sdk_manager):
+        """Unknown SDK stream types should raise ClaudeParsingError."""
+        from src.claude.exceptions import ClaudeParsingError
+
+        async def mock_query(prompt, options):
+            raise ClaudeSDKError("Unknown message type: rate_limit_event")
+            yield  # make it an async generator
+
+        with patch("src.claude.sdk_integration.query", side_effect=mock_query):
+            with pytest.raises(ClaudeParsingError) as exc_info:
+                await sdk_manager.execute_command(
+                    prompt="Test prompt",
+                    working_directory=Path("/test"),
+                )
+
+        assert "Unknown message type" in str(exc_info.value)
 
     async def test_session_management(self, sdk_manager):
         """Test session management."""

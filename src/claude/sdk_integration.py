@@ -296,8 +296,19 @@ class ClaudeSDKManager:
             raise ClaudeParsingError(f"Failed to decode Claude response: {str(e)}")
 
         except ClaudeSDKError as e:
-            logger.error("Claude SDK error", error=str(e))
-            raise ClaudeProcessError(f"Claude SDK error: {str(e)}")
+            error_str = str(e)
+            logger.error("Claude SDK error", error=error_str)
+
+            # New Claude CLI/SDK releases can emit stream event types older
+            # SDK builds do not parse yet (for example: rate_limit_event).
+            # Treat these as parsing/compatibility failures so callers can
+            # transparently fallback to subprocess mode.
+            if "Unknown message type" in error_str:
+                raise ClaudeParsingError(
+                    f"Failed to parse Claude SDK stream: {error_str}"
+                )
+
+            raise ClaudeProcessError(f"Claude SDK error: {error_str}")
 
         except Exception as e:
             # Handle ExceptionGroup from TaskGroup operations (Python 3.11+)

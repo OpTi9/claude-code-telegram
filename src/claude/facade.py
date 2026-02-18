@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import structlog
 
 from ..config.settings import Settings
-from .exceptions import ClaudeToolValidationError
+from .exceptions import ClaudeParsingError, ClaudeToolValidationError
 from .integration import ClaudeProcessManager, ClaudeResponse, StreamUpdate
 from .monitor import ToolMonitor
 from .sdk_integration import ClaudeSDKManager
@@ -272,7 +272,7 @@ class ClaudeIntegration:
         continue_session: bool = False,
         stream_callback: Optional[Callable] = None,
     ) -> ClaudeResponse:
-        """Execute command with SDK->subprocess fallback on JSON decode errors."""
+        """Execute command with SDK->subprocess fallback on SDK parse failures."""
         # Try SDK first if configured
         if self.config.use_sdk and self.sdk_manager:
             try:
@@ -290,16 +290,11 @@ class ClaudeIntegration:
 
             except Exception as e:
                 error_str = str(e)
-                # Check if this is a JSON decode error that indicates SDK issues
-                if (
-                    "Failed to decode JSON" in error_str
-                    or "JSON decode error" in error_str
-                    or "TaskGroup" in error_str
-                    or "ExceptionGroup" in error_str
-                ):
+                # Fallback when SDK stream parsing/compatibility fails.
+                if self._should_fallback_to_subprocess(e):
                     self._sdk_failed_count += 1
                     logger.warning(
-                        "Claude SDK failed with JSON/TaskGroup error, falling back to subprocess",
+                        "Claude SDK failed with recoverable parsing/stream error, falling back to subprocess",
                         error=error_str,
                         failure_count=self._sdk_failed_count,
                         error_type=type(e).__name__,
@@ -329,9 +324,9 @@ class ClaudeIntegration:
                         # Re-raise the original SDK error since it was the primary method
                         raise e
                 else:
-                    # For non-JSON errors, re-raise immediately
+                    # For non-fallback errors, re-raise immediately.
                     logger.error(
-                        "Claude SDK failed with non-JSON error", error=error_str
+                        "Claude SDK failed with non-fallback error", error=error_str
                     )
                     raise
         else:
@@ -344,6 +339,22 @@ class ClaudeIntegration:
                 continue_session=continue_session,
                 stream_callback=stream_callback,
             )
+
+    def _should_fallback_to_subprocess(self, error: Exception) -> bool:
+        """Return True if an SDK error is likely a parser/compatibility issue."""
+        if isinstance(error, ClaudeParsingError):
+            return True
+
+        error_str = str(error)
+        fallback_markers = (
+            "Failed to decode JSON",
+            "JSON decode error",
+            "TaskGroup",
+            "ExceptionGroup",
+            "Unknown message type",
+            "rate_limit_event",
+        )
+        return any(marker in error_str for marker in fallback_markers)
 
     async def _find_resumable_session(
         self,
