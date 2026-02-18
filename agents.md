@@ -340,3 +340,54 @@ Implemented in `main.py`. Respect this order when adding new components.
 - `DEVELOPMENT_MODE=true` can enable allow-all auth fallback when no auth providers are configured — never use that setup in production
 - Webhook deduplication uses a unique constraint on `delivery_id`; duplicate POSTs are silently dropped
 - Classic mode and agentic mode register completely different handler sets; mode cannot be switched at runtime (requires bot restart)
+
+---
+
+## Even G2 Integration Notes (2026-02)
+
+### End-to-end flow (voice prompt from glasses)
+
+```text
+Even app (/__g2_send)
+  -> FastAPI /webhooks/even-g2 (Bearer WEBHOOK_API_SECRET)
+  -> EventBus WebhookEvent(provider="even-g2", payload.text, payload.session_id)
+  -> AgentHandler.run_command(prompt=payload.text)
+  -> AgentResponseEvent(provider="even-g2", session_id=payload.session_id, chat_id=0)
+  -> EvenG2NotificationService POST {EVEN_G2_URL}/__g2_receive (Bearer EVEN_G2_BRIDGE_SECRET)
+  -> Even app /__g2_poll displays response on glasses
+```
+
+### Required env for Even G2 bridge
+
+- `ENABLE_API_SERVER=true`
+- `API_SERVER_PORT=8080` (or your chosen webhook server port)
+- `WEBHOOK_API_SECRET=<shared secret with Vite /__g2_send>`
+- `ENABLE_EVEN_G2=true`
+- `EVEN_G2_URL=http://127.0.0.1:<vite-port>` when bot + Vite run on same machine
+- `EVEN_G2_BRIDGE_SECRET=<shared secret with Vite /__g2_receive>`
+
+### Telegram mirroring behavior for even-g2
+
+- Even-g2 responses are published as `AgentResponseEvent(chat_id=0, provider="even-g2")`.
+- Telegram delivery for `chat_id=0` uses `NOTIFICATION_CHAT_IDS` broadcast list.
+- If `NOTIFICATION_CHAT_IDS` is unset, glasses still receive responses, but Telegram gets nothing.
+- To mirror to Telegram, set:
+  - `NOTIFICATION_CHAT_IDS=<comma-separated chat ids>`
+
+### Networking rule that avoids split-brain behavior
+
+- Use Tailscale hostname only for QR/device entry URL.
+- Use localhost callback for bot -> Vite if both run on same host:
+  - `EVEN_G2_URL=http://127.0.0.1:<vite-port>`
+- Keep callback port aligned with active Vite port (`--strictPort` recommended).
+
+### Quick troubleshooting
+
+- Telegram yes, glasses no:
+  - wrong `EVEN_G2_URL`
+  - wrong `EVEN_G2_BRIDGE_SECRET`
+  - bot callback port does not match active Vite port
+- Glasses yes, Telegram no:
+  - `NOTIFICATION_CHAT_IDS` missing/wrong
+- Prompt send fails before Claude:
+  - `WEBHOOK_API_SECRET` mismatch between repos
