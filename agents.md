@@ -391,3 +391,11 @@ Even app (/__g2_send)
   - `NOTIFICATION_CHAT_IDS` missing/wrong
 - Prompt send fails before Claude:
   - `WEBHOOK_API_SECRET` mismatch between repos
+
+### When used as subrepo in `even-dev-pip-boy`
+
+- This repo can be run from parent path: `services/claude-code-telegram`.
+- Parent stack command `npm run g2:up` (in `even-dev-pip-boy`) will:
+  - start this bot with `poetry run claude-telegram-bot`,
+  - auto-align `EVEN_G2_URL` to localhost callback URL,
+  - start Vite and generate QR from the parent repo.
