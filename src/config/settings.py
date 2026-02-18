@@ -157,6 +157,15 @@ class Settings(BaseSettings):
     enable_api_server: bool = Field(False, description="Enable FastAPI webhook server")
     api_server_port: int = Field(8080, description="Webhook API server port")
     enable_scheduler: bool = Field(False, description="Enable job scheduler")
+    enable_even_g2: bool = Field(
+        False, description="Enable Even G2 response bridge notifications"
+    )
+    even_g2_url: str = Field(
+        "http://localhost:5173", description="Even G2 app bridge base URL"
+    )
+    even_g2_bridge_secret: Optional[SecretStr] = Field(
+        None, description="Shared secret for bot-to-g2 bridge callbacks"
+    )
     github_webhook_secret: Optional[str] = Field(
         None, description="GitHub webhook HMAC secret"
     )
@@ -266,6 +275,11 @@ class Settings(BaseSettings):
         if self.enable_mcp and not self.mcp_config_path:
             raise ValueError("mcp_config_path required when enable_mcp is True")
 
+        if self.enable_even_g2 and not self.even_g2_bridge_secret:
+            raise ValueError(
+                "even_g2_bridge_secret required when enable_even_g2 is True"
+            )
+
         return self
 
     @property
@@ -299,5 +313,14 @@ class Settings(BaseSettings):
         return (
             self.anthropic_api_key.get_secret_value()
             if self.anthropic_api_key
+            else None
+        )
+
+    @property
+    def even_g2_bridge_secret_str(self) -> Optional[str]:
+        """Get Even G2 bridge secret as string."""
+        return (
+            self.even_g2_bridge_secret.get_secret_value()
+            if self.even_g2_bridge_secret
             else None
         )

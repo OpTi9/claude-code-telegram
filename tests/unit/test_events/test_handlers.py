@@ -72,6 +72,59 @@ class TestAgentHandler:
         response_events = [e for e in published if isinstance(e, AgentResponseEvent)]
         assert len(response_events) == 1
         assert response_events[0].text == "Analysis complete"
+        assert response_events[0].provider == "github"
+        assert response_events[0].session_id is None
+
+    async def test_even_g2_webhook_uses_raw_text_prompt(
+        self, event_bus: EventBus, mock_claude: AsyncMock, agent_handler: AgentHandler
+    ) -> None:
+        """even-g2 payload.text is passed straight through as the Claude prompt."""
+        mock_response = MagicMock()
+        mock_response.content = "Voice response"
+        mock_claude.run_command.return_value = mock_response
+
+        published: list = []
+        original_publish = event_bus.publish
+
+        async def capture_publish(event):  # type: ignore[no-untyped-def]
+            published.append(event)
+            await original_publish(event)
+
+        event_bus.publish = capture_publish  # type: ignore[assignment]
+
+        event = WebhookEvent(
+            provider="even-g2",
+            event_type_name="voice_prompt",
+            payload={"text": "summarize recent commits", "session_id": "sess-123"},
+            delivery_id="del-g2-1",
+        )
+
+        await agent_handler.handle_webhook(event)
+
+        mock_claude.run_command.assert_called_once()
+        assert (
+            mock_claude.run_command.call_args.kwargs["prompt"]
+            == "summarize recent commits"
+        )
+
+        response_events = [e for e in published if isinstance(e, AgentResponseEvent)]
+        assert len(response_events) == 1
+        assert response_events[0].provider == "even-g2"
+        assert response_events[0].session_id == "sess-123"
+
+    async def test_even_g2_webhook_empty_prompt_is_skipped(
+        self, mock_claude: AsyncMock, agent_handler: AgentHandler
+    ) -> None:
+        """even-g2 webhooks with blank text are ignored."""
+        event = WebhookEvent(
+            provider="even-g2",
+            event_type_name="voice_prompt",
+            payload={"text": "   ", "session_id": "sess-123"},
+            delivery_id="del-g2-empty",
+        )
+
+        await agent_handler.handle_webhook(event)
+        mock_claude.run_command.assert_not_called()
 
     async def test_scheduled_event_triggers_claude(
         self, event_bus: EventBus, mock_claude: AsyncMock, agent_handler: AgentHandler

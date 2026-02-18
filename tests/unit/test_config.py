@@ -125,6 +125,30 @@ def test_auth_token_validation():
         assert settings.auth_secret_str == "secret123"
 
 
+def test_even_g2_validation():
+    """Test Even G2 bridge secret validation."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with pytest.raises(ValidationError) as exc_info:
+            Settings(
+                telegram_bot_token="test_token",
+                telegram_bot_username="test_bot",
+                approved_directory=tmp_dir,
+                enable_even_g2=True,
+            )
+
+        assert "even_g2_bridge_secret required" in str(exc_info.value)
+
+        settings = Settings(
+            telegram_bot_token="test_token",
+            telegram_bot_username="test_bot",
+            approved_directory=tmp_dir,
+            enable_even_g2=True,
+            even_g2_bridge_secret="bridge-secret",
+        )
+        assert settings.enable_even_g2 is True
+        assert settings.even_g2_bridge_secret_str == "bridge-secret"
+
+
 def test_mcp_config_validation(tmp_path, monkeypatch):
     """Test MCP configuration validation."""
     test_dir = tmp_path / "projects"

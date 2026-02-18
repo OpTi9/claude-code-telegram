@@ -119,6 +119,9 @@ def _validate_config(settings: Settings) -> None:
     if settings.enable_token_auth and not settings.auth_token_secret:
         raise InvalidConfigError("Token auth enabled but no secret provided")
 
+    if settings.enable_even_g2 and not settings.even_g2_bridge_secret:
+        raise InvalidConfigError("Even G2 enabled but no bridge secret provided")
+
     # Validate database path for SQLite
     if settings.database_url.startswith("sqlite:///"):
         db_path = settings.database_path

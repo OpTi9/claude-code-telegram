@@ -25,6 +25,7 @@ from src.events.bus import EventBus
 from src.events.handlers import AgentHandler
 from src.events.middleware import EventSecurityMiddleware
 from src.exceptions import ConfigurationError
+from src.notifications.even_g2 import EvenG2NotificationService
 from src.notifications.service import NotificationService
 from src.scheduler.scheduler import JobScheduler
 from src.security.audit import AuditLogger, InMemoryAuditStorage
@@ -221,6 +222,7 @@ async def run_application(app: Dict[str, Any]) -> None:
     event_bus: EventBus = app["event_bus"]
 
     notification_service: Optional[NotificationService] = None
+    even_g2_service: Optional[EvenG2NotificationService] = None
     scheduler: Optional[JobScheduler] = None
 
     # Set up signal handlers for graceful shutdown
@@ -253,6 +255,15 @@ async def run_application(app: Dict[str, Any]) -> None:
         )
         notification_service.register()
         await notification_service.start()
+
+        if config.enable_even_g2 and config.even_g2_bridge_secret_str:
+            even_g2_service = EvenG2NotificationService(
+                event_bus=event_bus,
+                g2_url=config.even_g2_url,
+                bridge_secret=config.even_g2_bridge_secret_str,
+            )
+            even_g2_service.register()
+            logger.info("Even G2 notification service enabled", url=config.even_g2_url)
 
         # Collect concurrent tasks
         tasks = []

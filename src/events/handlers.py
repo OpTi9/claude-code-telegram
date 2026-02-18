@@ -53,7 +53,18 @@ class AgentHandler:
             delivery_id=event.delivery_id,
         )
 
-        prompt = self._build_webhook_prompt(event)
+        if event.provider == "even-g2":
+            prompt = str(event.payload.get("text", "")).strip()
+            session_id = str(event.payload.get("session_id", "")).strip() or None
+            if not prompt:
+                logger.warning(
+                    "Skipping even-g2 webhook with empty prompt",
+                    delivery_id=event.delivery_id,
+                )
+                return
+        else:
+            prompt = self._build_webhook_prompt(event)
+            session_id = None
 
         try:
             response = await self.claude.run_command(
@@ -71,6 +82,8 @@ class AgentHandler:
                     AgentResponseEvent(
                         chat_id=0,
                         text=response.content,
+                        provider=event.provider,
+                        session_id=session_id,
                         originating_event_id=event.id,
                     )
                 )

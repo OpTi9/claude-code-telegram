@@ -50,5 +50,7 @@ class AgentResponseEvent(Event):
     text: str = ""
     parse_mode: Optional[str] = "HTML"
     reply_to_message_id: Optional[int] = None
+    provider: Optional[str] = None
+    session_id: Optional[str] = None
     source: str = "agent"
     originating_event_id: Optional[str] = None
