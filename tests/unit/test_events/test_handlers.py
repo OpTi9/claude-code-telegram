@@ -107,11 +107,93 @@ class TestAgentHandler:
         assert prompt.startswith(EVEN_G2_PROMPT_PREFIX)
         assert "User request:\nsummarize recent commits" in prompt
         assert mock_claude.run_command.call_args.kwargs["session_id"] == "sess-123"
+        assert (
+            mock_claude.run_command.call_args.kwargs["working_directory"]
+            == agent_handler.default_working_directory
+        )
 
         response_events = [e for e in published if isinstance(e, AgentResponseEvent)]
         assert len(response_events) == 1
         assert response_events[0].provider == "even-g2"
         assert response_events[0].session_id == "sess-123"
+
+    async def test_even_g2_webhook_uses_valid_working_directory_within_approved_root(
+        self, event_bus: EventBus, mock_claude: AsyncMock, tmp_path: Path
+    ) -> None:
+        """even-g2 may override working dir only with an existing path under approved root."""
+        approved_root = tmp_path / "approved"
+        approved_root.mkdir()
+        nested_project = approved_root / "proj-a"
+        nested_project.mkdir()
+
+        handler = AgentHandler(
+            event_bus=event_bus,
+            claude_integration=mock_claude,
+            default_working_directory=approved_root,
+            default_user_id=42,
+        )
+        handler.register()
+
+        mock_response = MagicMock()
+        mock_response.content = "ok"
+        mock_claude.run_command.return_value = mock_response
+
+        event = WebhookEvent(
+            provider="even-g2",
+            event_type_name="voice_prompt",
+            payload={
+                "text": "list files",
+                "session_id": "sess-123",
+                "working_directory": str(nested_project),
+            },
+            delivery_id="del-g2-workdir-valid",
+        )
+
+        await handler.handle_webhook(event)
+
+        assert (
+            mock_claude.run_command.call_args.kwargs["working_directory"]
+            == nested_project.resolve()
+        )
+
+    async def test_even_g2_webhook_rejects_out_of_root_working_directory(
+        self, event_bus: EventBus, mock_claude: AsyncMock, tmp_path: Path
+    ) -> None:
+        """Out-of-root even-g2 working dirs must fall back to default approved root."""
+        approved_root = tmp_path / "approved"
+        approved_root.mkdir()
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+
+        handler = AgentHandler(
+            event_bus=event_bus,
+            claude_integration=mock_claude,
+            default_working_directory=approved_root,
+            default_user_id=42,
+        )
+        handler.register()
+
+        mock_response = MagicMock()
+        mock_response.content = "ok"
+        mock_claude.run_command.return_value = mock_response
+
+        event = WebhookEvent(
+            provider="even-g2",
+            event_type_name="voice_prompt",
+            payload={
+                "text": "list files",
+                "session_id": "sess-123",
+                "working_directory": str(outside_dir),
+            },
+            delivery_id="del-g2-workdir-outside",
+        )
+
+        await handler.handle_webhook(event)
+
+        assert (
+            mock_claude.run_command.call_args.kwargs["working_directory"]
+            == approved_root.resolve()
+        )
 
     async def test_even_g2_webhook_empty_prompt_is_skipped(
         self, mock_claude: AsyncMock, agent_handler: AgentHandler

@@ -44,7 +44,7 @@ class AgentHandler:
     ) -> None:
         self.event_bus = event_bus
         self.claude = claude_integration
-        self.default_working_directory = default_working_directory
+        self.default_working_directory = default_working_directory.resolve()
         self.default_user_id = default_user_id
 
     def register(self) -> None:
@@ -74,14 +74,18 @@ class AgentHandler:
                 )
                 return
             prompt = self._build_even_g2_prompt(raw_prompt)
+            working_directory = self._resolve_even_g2_working_directory(
+                event.payload.get("working_directory")
+            )
         else:
             prompt = self._build_webhook_prompt(event)
             session_id = None
+            working_directory = self.default_working_directory
 
         try:
             response = await self.claude.run_command(
                 prompt=prompt,
-                working_directory=self.default_working_directory,
+                working_directory=working_directory,
                 user_id=self.default_user_id,
                 session_id=session_id,
             )
@@ -174,6 +178,52 @@ class AgentHandler:
     def _build_even_g2_prompt(self, user_prompt: str) -> str:
         """Build a strict plain-text prompt for Even G2 rendering constraints."""
         return f"{EVEN_G2_PROMPT_PREFIX}\nUser request:\n{user_prompt}"
+
+    def _resolve_even_g2_working_directory(self, raw_value: Any) -> Path:
+        """Validate optional even-g2 working directory against approved root."""
+        if not isinstance(raw_value, str):
+            return self.default_working_directory
+
+        value = raw_value.strip()
+        if not value:
+            return self.default_working_directory
+
+        candidate = Path(value).expanduser()
+        if not candidate.is_absolute():
+            candidate = self.default_working_directory / candidate
+
+        try:
+            resolved = candidate.resolve()
+        except (RuntimeError, OSError, ValueError):
+            logger.warning(
+                "Ignoring invalid even-g2 working directory",
+                requested=value,
+            )
+            return self.default_working_directory
+
+        if not self._is_within_approved_root(resolved):
+            logger.warning(
+                "Ignoring even-g2 working directory outside approved root",
+                requested=value,
+                approved_root=str(self.default_working_directory),
+            )
+            return self.default_working_directory
+
+        if not resolved.exists() or not resolved.is_dir():
+            logger.warning(
+                "Ignoring even-g2 working directory that is not an existing directory",
+                requested=value,
+            )
+            return self.default_working_directory
+
+        return resolved
+
+    def _is_within_approved_root(self, candidate: Path) -> bool:
+        try:
+            candidate.relative_to(self.default_working_directory)
+            return True
+        except ValueError:
+            return False
 
     def _summarize_payload(self, payload: Dict[str, Any], max_depth: int = 2) -> str:
         """Create a readable summary of a webhook payload."""
