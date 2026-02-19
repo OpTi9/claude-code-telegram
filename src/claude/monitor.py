@@ -113,7 +113,9 @@ class ToolMonitor:
         if tool_name in ["bash", "shell", "Bash"]:
             command = tool_input.get("command", "")
 
-            # Check for dangerous commands
+            # Check for dangerous commands.
+            # Keep this focused on clearly risky patterns and avoid
+            # flagging common benign shell syntax (e.g. `2>&1`).
             dangerous_patterns = [
                 "rm -rf",
                 "sudo",
@@ -122,10 +124,9 @@ class ToolMonitor:
                 "wget",
                 "nc ",
                 "netcat",
-                ">",
-                ">>",
                 "|",
-                "&",
+                "&&",
+                "||",
                 ";",
                 "$(",
                 "`",
