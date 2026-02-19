@@ -14,6 +14,17 @@ from .bus import Event, EventBus
 from .types import AgentResponseEvent, ScheduledEvent, WebhookEvent
 
 logger = structlog.get_logger()
+EVEN_G2_PROMPT_PREFIX = (
+    "You are responding for Even G2 smart glasses.\n"
+    "Output rules (strict):\n"
+    "1) Plain text only.\n"
+    "2) No markdown, no code fences, no tables, no HTML.\n"
+    "3) Keep it concise by default: about 6-10 short lines.\n"
+    "4) Start with the direct answer, then short numbered steps if needed.\n"
+    "5) Keep lines short and easy to read on a tiny display.\n"
+    "6) If the user explicitly asks for detail, provide at most 3 short sections.\n"
+    "7) If commands are needed, put one command per line.\n"
+)
 
 
 class AgentHandler:
@@ -54,14 +65,15 @@ class AgentHandler:
         )
 
         if event.provider == "even-g2":
-            prompt = str(event.payload.get("text", "")).strip()
+            raw_prompt = str(event.payload.get("text", "")).strip()
             session_id = str(event.payload.get("session_id", "")).strip() or None
-            if not prompt:
+            if not raw_prompt:
                 logger.warning(
                     "Skipping even-g2 webhook with empty prompt",
                     delivery_id=event.delivery_id,
                 )
                 return
+            prompt = self._build_even_g2_prompt(raw_prompt)
         else:
             prompt = self._build_webhook_prompt(event)
             session_id = None
@@ -71,6 +83,7 @@ class AgentHandler:
                 prompt=prompt,
                 working_directory=self.default_working_directory,
                 user_id=self.default_user_id,
+                session_id=session_id,
             )
 
             if response.content:
@@ -157,6 +170,10 @@ class AgentHandler:
             f"Analyze this event and provide a concise summary. "
             f"Highlight anything that needs my attention."
         )
+
+    def _build_even_g2_prompt(self, user_prompt: str) -> str:
+        """Build a strict plain-text prompt for Even G2 rendering constraints."""
+        return f"{EVEN_G2_PROMPT_PREFIX}\nUser request:\n{user_prompt}"
 
     def _summarize_payload(self, payload: Dict[str, Any], max_depth: int = 2) -> str:
         """Create a readable summary of a webhook payload."""

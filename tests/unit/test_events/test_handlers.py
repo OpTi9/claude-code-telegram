@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.events.bus import EventBus
-from src.events.handlers import AgentHandler
+from src.events.handlers import AgentHandler, EVEN_G2_PROMPT_PREFIX
 from src.events.types import AgentResponseEvent, ScheduledEvent, WebhookEvent
 
 
@@ -67,6 +67,7 @@ class TestAgentHandler:
         mock_claude.run_command.assert_called_once()
         call_kwargs = mock_claude.run_command.call_args
         assert "github" in call_kwargs.kwargs["prompt"].lower()
+        assert call_kwargs.kwargs["session_id"] is None
 
         # Should publish an AgentResponseEvent
         response_events = [e for e in published if isinstance(e, AgentResponseEvent)]
@@ -75,10 +76,10 @@ class TestAgentHandler:
         assert response_events[0].provider == "github"
         assert response_events[0].session_id is None
 
-    async def test_even_g2_webhook_uses_raw_text_prompt(
+    async def test_even_g2_webhook_wraps_prompt_with_g2_rendering_rules(
         self, event_bus: EventBus, mock_claude: AsyncMock, agent_handler: AgentHandler
     ) -> None:
-        """even-g2 payload.text is passed straight through as the Claude prompt."""
+        """even-g2 payload.text is wrapped with strict plain-text output rules."""
         mock_response = MagicMock()
         mock_response.content = "Voice response"
         mock_claude.run_command.return_value = mock_response
@@ -102,10 +103,10 @@ class TestAgentHandler:
         await agent_handler.handle_webhook(event)
 
         mock_claude.run_command.assert_called_once()
-        assert (
-            mock_claude.run_command.call_args.kwargs["prompt"]
-            == "summarize recent commits"
-        )
+        prompt = mock_claude.run_command.call_args.kwargs["prompt"]
+        assert prompt.startswith(EVEN_G2_PROMPT_PREFIX)
+        assert "User request:\nsummarize recent commits" in prompt
+        assert mock_claude.run_command.call_args.kwargs["session_id"] == "sess-123"
 
         response_events = [e for e in published if isinstance(e, AgentResponseEvent)]
         assert len(response_events) == 1
@@ -212,3 +213,9 @@ class TestAgentHandler:
         big_payload = {"key": "x" * 3000}
         summary = agent_handler._summarize_payload(big_payload)
         assert len(summary) <= 2100  # 2000 + truncation message
+
+    def test_build_even_g2_prompt(self, agent_handler: AgentHandler) -> None:
+        """Even G2 prompt wrapper includes policy and original user request."""
+        wrapped = agent_handler._build_even_g2_prompt("list files")
+        assert wrapped.startswith(EVEN_G2_PROMPT_PREFIX)
+        assert wrapped.endswith("User request:\nlist files")
