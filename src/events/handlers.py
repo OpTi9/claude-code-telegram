@@ -24,6 +24,11 @@ EVEN_G2_PROMPT_PREFIX = (
     "5) Keep lines short and easy to read on a tiny display.\n"
     "6) If the user explicitly asks for detail, provide at most 3 short sections.\n"
     "7) If commands are needed, put one command per line.\n"
+    "8) For code changes in /home/aza/Desktop/even-dev-pip-boy/apps/g2claude:\n"
+    "   after edits and checks, when user asks to restart, restart the stack before final response by running:\n"
+    "   npm run g2:down\n"
+    "   npm run g2:up\n"
+    "   (run as two separate commands, not chained with &&).\n"
 )
 
 
